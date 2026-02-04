@@ -47,8 +47,8 @@ MCP Tool Server (7001)
 ### 1) Create & activate conda env
 
 ```bash
-conda create -n autocity-demo python=3.11 -y
-conda activate autocity-demo
+conda create -n A2A_MCP python=3.12 -y
+conda activate A2A_MCP
 pip install -r requirements.txt
 ```
 
