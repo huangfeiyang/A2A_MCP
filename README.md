@@ -35,6 +35,59 @@ MCP Tool Server (7001)
    +-----> External APIs (OpenWeather / AMap)
 ```
 
+### Structure
+```
+autocity-agent-demo/
+├─ README.md
+├─ LICENSE
+├─ .gitignore
+├─ .env.example
+├─ environment.yml                 # conda 环境（主入口）
+├─ requirements.txt                # 可选：pip 备用/CI 用
+├─ requirements-dev.txt            # 可选：测试/格式化
+│
+├─ tool_server/                    # MCP 工具服务（能力层）
+│  ├─ __init__.py
+│  ├─ server.py                    # 启动入口：FastMCP + 注册 tools
+│  ├─ settings.py                  # 读取 env，集中配置
+│  ├─ logging.py                   # JSON 日志 + trace_id
+│  ├─ schemas.py                   # Pydantic：Input/Output/Error 契约模型（单一真相源）
+│  ├─ adapters/                    # 外部 API 适配器（反腐层）
+│  │  ├─ amap.py                   # 高德封装：请求/重试/清洗字段
+│  │  └─ openweather.py            # 天气封装
+│  └─ tools/                       # MCP tools（尽量短小、结构化输出）
+│     ├─ time.py
+│     ├─ weather.py
+│     └─ poi.py
+│
+├─ agent_server/                   # A2A 代理服务（决策层）
+│  ├─ __init__.py
+│  ├─ server.py                    # 启动入口：A2A Server
+│  ├─ agent.py                     # 单智能体：tool-use loop + 结果汇总
+│  ├─ tool_broker.py               # 统一调用 MCP：超时/重试/错误归一/日志
+│  ├─ prompts.py                   # 规划/回答 两套 prompt 模板（别散落在 agent 里）
+│  ├─ state.py                     # 任务内 state（轻量），后续可替换成持久化
+│  ├─ settings.py
+│  └─ logging.py
+│
+├─ client/                         # 演示入口（用户体验层）
+│  ├─ __init__.py
+│  ├─ cli.py                       # 一条命令跑 demo + 可选打印 tool_calls
+│  └─ examples.md                  # 演示 query 集合
+│
+├─ scripts/                        # 一键启动/开发脚本
+│  ├─ run_local.sh
+│  └─ smoke_test.sh
+│
+├─ tests/                          # 最小测试集（避免改一次坏一次）
+│  ├─ test_tools_unit.py           # time / schema / 纯逻辑
+│  ├─ test_contract.py             # schema 对齐（agent<->mcp）
+│  └─ test_smoke_cli.py
+│
+└─ traces/                         # 运行生成：trace 回放文件（gitignore）
+
+```
+
 ### Runtime ports
 
 - MCP Tool Server: `http://localhost:7001`
