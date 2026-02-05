@@ -37,54 +37,59 @@ MCP Tool Server (7001)
 
 ### Structure
 ```
-autocity-agent-demo/
-├─ README.md
-├─ LICENSE
-├─ .gitignore
-├─ .env.example
-├─ environment.yml                 # conda 环境（主入口）
-├─ requirements.txt                # 可选：pip 备用/CI 用
-├─ requirements-dev.txt            # 可选：测试/格式化
+A2A_MCP/
+├─ pyproject.toml                 # 项目元信息 + 工具配置（ruff/black/mypy/pytest 等）
+├─ README.md                      # 使用说明/架构/启动方式/示例
+├─ LICENSE                        # 许可证
+├─ .gitignore                     # 忽略规则（.env、logs、traces、__pycache__…）
+├─ .env.example                   # 环境变量模板（不含真实 key）
+├─ environment.yml                # conda 环境（主入口，Python=3.12）
+├─ requirements.txt               # 运行依赖（pip 备选/CI 用）
+├─ requirements-dev.txt           # 开发依赖（测试/格式化/类型检查）
 │
-├─ tool_server/                    # MCP 工具服务（能力层）
-│  ├─ __init__.py
-│  ├─ server.py                    # 启动入口：FastMCP + 注册 tools
-│  ├─ settings.py                  # 读取 env，集中配置
-│  ├─ logging.py                   # JSON 日志 + trace_id
-│  ├─ schemas.py                   # Pydantic：Input/Output/Error 契约模型（单一真相源）
-│  ├─ adapters/                    # 外部 API 适配器（反腐层）
-│  │  ├─ amap.py                   # 高德封装：请求/重试/清洗字段
-│  │  └─ openweather.py            # 天气封装
-│  └─ tools/                       # MCP tools（尽量短小、结构化输出）
-│     ├─ time.py
-│     ├─ weather.py
-│     └─ poi.py
+├─ scripts/                       # 本地脚本（减少记命令）
+│  ├─ run_local.sh                # 一键启动：先 tool_server(7001) 再 agent_server(7002)
+│  └─ smoke_test.sh               # 冒烟测试：Agent Card + 最小请求/CLI
 │
-├─ agent_server/                   # A2A 代理服务（决策层）
-│  ├─ __init__.py
-│  ├─ server.py                    # 启动入口：A2A Server
-│  ├─ agent.py                     # 单智能体：tool-use loop + 结果汇总
-│  ├─ tool_broker.py               # 统一调用 MCP：超时/重试/错误归一/日志
-│  ├─ prompts.py                   # 规划/回答 两套 prompt 模板（别散落在 agent 里）
-│  ├─ state.py                     # 任务内 state（轻量），后续可替换成持久化
-│  ├─ settings.py
-│  └─ logging.py
+├─ src/                           # src 布局：所有真实代码都放这里
+│  └─ a2a_mcp_demo/               # 主 Python 包（import 都从这里开始）
+│     ├─ __init__.py              # 包标识/版本（可选）
+│     │
+│     ├─ tool_server/             # MCP 工具服务（能力层：只提供能力，不做业务决策）
+│     │  ├─ __init__.py
+│     │  ├─ server.py             # FastAPI app + /tools/{tool} 路由注册/启动入口
+│     │  ├─ settings.py           # 读取 env/集中配置（keys、timeout、base_url 等）
+│     │  ├─ logging.py            # 工具侧结构化日志（trace_id、latency、error_code）
+│     │  ├─ schemas.py            # 工具契约：Input/Output/Error/统一 ToolResponse（单一真相源）
+│     │  ├─ adapters/             # 外部 API 适配器（反腐层：清洗字段/错误映射/重试）
+│     │  │  ├─ __init__.py
+│     │  │  ├─ amap.py            # 高德 API 封装
+│     │  │  └─ openweather.py     # OpenWeather API 封装
+│     │  └─ tools/                # MCP tools（薄工具：校验输入→调 adapter→返回结构化 data）
+│     │     ├─ __init__.py
+│     │     ├─ time.py            # 当前时间工具（建议先实现，用来验证链路）
+│     │     ├─ weather.py         # 天气工具
+│     │     └─ poi.py             # POI 工具
+│     │
+│     ├─ agent_server/            # A2A Agent 服务（决策层：理解→选工具→调用→汇总回答）
+│     │  ├─ __init__.py
+│     │  ├─ app.py                # FastAPI 入口：挂 A2A 协议路由（Agent Card/任务/SSE）
+│     │  ├─ executor.py           # 协议适配层：把 A2A 任务请求转成内部执行（不堆业务逻辑）
+│     │  ├─ agent.py              # 智能体核心：LLM + tool-use loop + 最终回答生成
+│     │  ├─ tool_broker.py        # 统一调 MCP：httpx async、超时/重试/错误归一/日志
+│     │  ├─ prompts.py            # Prompt 模板（Planner/Responder 分离，避免屎山）
+│     │  ├─ state.py              # 任务内状态（本次请求中间信息；后续可替换持久化）
+│     │  ├─ settings.py           # Agent 配置（模型名、MCP_BASE_URL、预算、日志目录等）
+│     │  └─ logging.py            # Agent 侧结构化日志/trace（含 tool_calls、usage 可选）
+│     │
+│     └─ client/                  # 调用入口层（演示/调试）
+│        ├─ __init__.py
+│        └─ cli.py                # 命令行客户端（--verbose 打印 tool_calls/trace_id）
 │
-├─ client/                         # 演示入口（用户体验层）
-│  ├─ __init__.py
-│  ├─ cli.py                       # 一条命令跑 demo + 可选打印 tool_calls
-│  └─ examples.md                  # 演示 query 集合
-│
-├─ scripts/                        # 一键启动/开发脚本
-│  ├─ run_local.sh
-│  └─ smoke_test.sh
-│
-├─ tests/                          # 最小测试集（避免改一次坏一次）
-│  ├─ test_tools_unit.py           # time / schema / 纯逻辑
-│  ├─ test_contract.py             # schema 对齐（agent<->mcp）
-│  └─ test_smoke_cli.py
-│
-└─ traces/                         # 运行生成：trace 回放文件（gitignore）
+└─ tests/                         # 测试集（防回归、保证可维护）
+   ├─ test_tools_unit.py           # 工具单测（优先纯逻辑；外部 API 用 mock/fixture）
+   ├─ test_contract.py             # 契约测试（工具名称/参数/schema 对齐，防漂移）
+   └─ test_smoke_cli.py            # 端到端冒烟测试（起服务后跑一次最小链路）
 
 ```
 
