@@ -27,3 +27,7 @@ black>=24.1
 # --- Optional: type checking ---
 mypy>=1.8
 types-requests>=2.31
+
+# --- A2A Agent server (FastAPI) ---
+a2a-sdk==0.3.22
+httpx==0.28.1
