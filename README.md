@@ -1,20 +1,21 @@
 # AutoCity Agent Demo (Single Agent + MCP)
 
-一个可复现的 **单智能体 + MCP 工具服务** 小项目：用户用自然语言提问，Agent 使用大模型决定是否调用 MCP 工具（天气/时间/POI/地理能力等），再生成最终回答。
+一个可复现、可扩展、可调试的 **单智能体 + MCP 工具服务** Demo。
 
-> 先把单智能体 + MCP 做扎实；后续再加多智能体 + RAG，避免一上来架构过度复杂。
+核心目标：
+- 让 Agent 只负责“决策与编排”，工具服务只负责“结构化能力输出”。
+- 让工程结构清晰、可替换、可扩展（后续加多智能体或 RAG 不推倒重来）。
 
 ---
 
-## What’s in this repo
+## Features
 
-### Key files
-
-- `mcp_server.py`：MCP 工具服务（默认端口 **7001**），对外提供 `/tools/<tool_name>` 的 HTTP 调用入口
-- `a2a_agent_advanced.py`：A2A Agent 服务（默认端口 **7002**），负责 LLM 决策 + 工具调用编排
-- `requirements.txt`：依赖列表
-- `test_a2a_advanced.ipynb`：简单交互/测试示例
-- `a2a和mcp_demo.pdf`：项目说明/演示材料
+- 单智能体 tool-use loop（OpenAI tool calling）
+- MCP 风格工具服务（结构化输入输出）
+- 统一配置与日志（trace_id 贯穿全链路）
+- 可运行的 mock 模式（无 OpenAI key 也能跑通）
+- 最小测试集（单测、契约、冒烟）
+- 全链路 trace 文件（每次请求一份可回放记录）
 
 ---
 
@@ -25,214 +26,201 @@ User / Client
    |
    v
 A2A Agent Server (7002)
-   |  (OpenAI tools / function calling)
+   |  (OpenAI tool calling)
    +-----> OpenAI Model
    |
-   |  (HTTP POST /tools/<name>)
+   |  (HTTP POST /tools/{name})
    v
 MCP Tool Server (7001)
    |
    +-----> External APIs (OpenWeather / AMap)
 ```
 
-### Structure
-```
-A2A_MCP/
-├─ pyproject.toml                 # 项目元信息 + 工具配置（ruff/black/mypy/pytest 等）
-├─ README.md                      # 使用说明/架构/启动方式/示例
-├─ LICENSE                        # 许可证
-├─ .gitignore                     # 忽略规则（.env、logs、traces、__pycache__…）
-├─ .env.example                   # 环境变量模板（不含真实 key）
-├─ environment.yml                # conda 环境（主入口，Python=3.12）
-├─ requirements.txt               # 运行依赖（pip 备选/CI 用）
-├─ requirements-dev.txt           # 开发依赖（测试/格式化/类型检查）
-│
-├─ scripts/                       # 本地脚本（减少记命令）
-│  ├─ run_local.sh                # 一键启动：先 tool_server(7001) 再 agent_server(7002)
-│  └─ smoke_test.sh               # 冒烟测试：Agent Card + 最小请求/CLI
-│
-├─ src/                           # src 布局：所有真实代码都放这里
-│  └─ a2a_mcp_demo/               # 主 Python 包（import 都从这里开始）
-│     ├─ __init__.py              # 包标识/版本（可选）
-│     │
-│     ├─ tool_server/             # MCP 工具服务（能力层：只提供能力，不做业务决策）
-│     │  ├─ __init__.py
-│     │  ├─ server.py             # FastAPI app + /tools/{tool} 路由注册/启动入口
-│     │  ├─ settings.py           # 读取 env/集中配置（keys、timeout、base_url 等）
-│     │  ├─ logging.py            # 工具侧结构化日志（trace_id、latency、error_code）
-│     │  ├─ schemas.py            # 工具契约：Input/Output/Error/统一 ToolResponse（单一真相源）
-│     │  ├─ adapters/             # 外部 API 适配器（反腐层：清洗字段/错误映射/重试）
-│     │  │  ├─ __init__.py
-│     │  │  ├─ amap.py            # 高德 API 封装
-│     │  │  └─ openweather.py     # OpenWeather API 封装
-│     │  └─ tools/                # MCP tools（薄工具：校验输入→调 adapter→返回结构化 data）
-│     │     ├─ __init__.py
-│     │     ├─ time.py            # 当前时间工具（建议先实现，用来验证链路）
-│     │     ├─ weather.py         # 天气工具
-│     │     └─ poi.py             # POI 工具
-│     │
-│     ├─ agent_server/            # A2A Agent 服务（决策层：理解→选工具→调用→汇总回答）
-│     │  ├─ __init__.py
-│     │  ├─ app.py                # FastAPI 入口：挂 A2A 协议路由（Agent Card/任务/SSE）
-│     │  ├─ executor.py           # 协议适配层：把 A2A 任务请求转成内部执行（不堆业务逻辑）
-│     │  ├─ agent.py              # 智能体核心：LLM + tool-use loop + 最终回答生成
-│     │  ├─ tool_broker.py        # 统一调 MCP：httpx async、超时/重试/错误归一/日志
-│     │  ├─ prompts.py            # Prompt 模板（Planner/Responder 分离，避免屎山）
-│     │  ├─ state.py              # 任务内状态（本次请求中间信息；后续可替换持久化）
-│     │  ├─ settings.py           # Agent 配置（模型名、MCP_BASE_URL、预算、日志目录等）
-│     │  └─ logging.py            # Agent 侧结构化日志/trace（含 tool_calls、usage 可选）
-│     │
-│     └─ client/                  # 调用入口层（演示/调试）
-│        ├─ __init__.py
-│        └─ cli.py                # 命令行客户端（--verbose 打印 tool_calls/trace_id）
-│
-└─ tests/                         # 测试集（防回归、保证可维护）
-   ├─ test_tools_unit.py           # 工具单测（优先纯逻辑；外部 API 用 mock/fixture）
-   ├─ test_contract.py             # 契约测试（工具名称/参数/schema 对齐，防漂移）
-   └─ test_smoke_cli.py            # 端到端冒烟测试（起服务后跑一次最小链路）
-
-```
-
-### Runtime ports
-
-- MCP Tool Server: `http://localhost:7001`
-- A2A Agent Server: `http://localhost:7002`
+关键原则：
+- 工具服务只产出结构化 `data`，不输出自然语言。
+- 自然语言只在 Agent 最后一跳生成。
 
 ---
 
-## Quickstart (Conda)
+## Project Structure
 
-### 1) Create & activate conda env
+```
+A2A_MCP/
+├─ pyproject.toml
+├─ README.md
+├─ .env.example
+├─ environment.yml
+├─ requirements.txt
+├─ requirements-dev.txt
+├─ scripts/
+│  ├─ run_local.sh
+│  └─ smoke_test.sh
+├─ src/
+│  ├─ tool_server/
+│  ├─ agent_server/
+│  └─ client/
+├─ traces/
+└─ tests/
+```
+
+### Layer Responsibilities
+
+- `tool_server/`（能力层）
+  - 输入校验 → adapter → 结构化输出
+  - 不做“选择调用哪个工具”的决策
+
+- `agent_server/`（决策层）
+  - LLM 规划工具调用
+  - ToolBroker 统一调用工具
+  - 汇总工具结果并生成最终回答
+
+- `client/`（入口层）
+  - CLI 发送请求与展示结果
+
+- `traces/`（回放层）
+  - 每个请求输出一个结构化 JSON，用于复现与排障
+
+---
+
+## Quickstart
+
+### 1) Create & activate env
 
 ```bash
 conda create -n A2A_MCP python=3.12 -y
 conda activate A2A_MCP
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### 2) Configure environment variables
 
-Create a `.env` in project root (do **NOT** commit it):
+Create `.env` in project root:
 
 ```bash
-# OpenAI
 OPENAI_API_KEY=your_openai_api_key
-
-# OpenWeather (required if you use weather tools)
 OPENWEATHER_API_KEY=your_openweather_api_key
-
-# AMap (required if you use AMap tools)
 AMAP_API_KEY=your_amap_api_key
 ```
 
-> 建议额外加一个 `.env.example`（无真实 key）给别人复制使用，并在 `.gitignore` 忽略 `.env`。
-
-### 3) Start servers (two terminals)
-
-**Terminal A: MCP tool server**
+### 3) Start services
 
 ```bash
-python mcp_server.py
+bash scripts/run_local.sh
 ```
 
-**Terminal B: A2A agent server**
+### 4) Call the agent
+
+注意：CLI 命令需要能找到 `src/` 下的包。你可以：
+- 在命令前加 `PYTHONPATH=src`
+- 或者先执行 `export PYTHONPATH=src`（只对当前终端生效）
 
 ```bash
-python a2a_agent_advanced.py
+PYTHONPATH=src python -m client.cli "北京今天天气怎么样？" --verbose
 ```
 
-### 4) Try a quick demo
-
-Run the provided notebook:
+如果遇到超时（复杂问题可能需要更久），可增加超时：
 
 ```bash
-jupyter notebook test_a2a_advanced.ipynb
+PYTHONPATH=src python -m client.cli "我周末去上海，帮我看看天气，根据这个以及逛景点，两天行程怎么安排？" --timeout 120 --verbose
 ```
 
-Or (optional) call the agent with a tiny Python snippet (requires `python-a2a`):
+也可以直接用 HTTP：
 
-```python
-from python_a2a import A2AClient
-
-client = A2AClient(base_url="http://localhost:7002")
-print(client.ask("北京今天天气怎么样？"))
+```bash
+curl -i -H "Content-Type: application/json" \
+  -d '{"query":"北京现在气温多少度？"}' \
+  http://localhost:7002/v1/ask
 ```
 
 ---
 
-## Available Tools (current)
+## Mock Mode
 
-### Basic tools
+无 OpenAI key 时可使用 mock 模式：
 
-- `calculator`
-- `get_current_time`
-- `get_current_weather`
+```bash
+export A2A_MCP_MOCK_LLM=true
+export A2A_MCP_MCP_BASE_URL=inproc
+```
 
-### AMap tools
-
-- `get_city_poi`
-- `amap_geocode`
-- `amap_place_around`
-- `amap_adcode_search`
-- `amap_weather_forecast`
-
-### Notes / TODOs
-
-- `amap_route_planning`：当前 **Agent 侧 schema 已声明**，但若 **MCP 端未实现**会导致调用失败（建议补齐或先移除声明）
-- SSE 流式输出：目前有基础函数/思路，但尚未形成端到端 streaming demo（建议后续补一个真正流式工具作为展示）
+说明：
+- 环境变量优先级高于 `.env` 文件
+- 如果之前 `export` 过 mock 变量，后续需要显式关闭：
+  - `unset A2A_MCP_MOCK_LLM` 或 `export A2A_MCP_MOCK_LLM=false`
+  - `unset A2A_MCP_MCP_BASE_URL` 或改回真实地址
 
 ---
 
-## Demo Queries
+## Traces (Request Replay)
 
-- 「北京今天天气怎么样？」
-- 「帮我计算 3*100+20」
-- 「现在几点了？」
-- 「推荐东京的热门景点」
-- 「我在上海外滩，附近有什么好吃的？」
+每次请求会输出一个结构化 trace 文件：`traces/<timestamp>_<trace_id>.json`。  
+内容包含：
+- 关键时间戳与耗时
+- 工具调用序列（输入/输出/错误）
+- LLM 调用摘要（模型、temperature、tool_calls）
+- 最终回答
+
+你可以将 trace 文件用于：
+- 离线复现与回放
+- 排查“LLM 规划/工具参数/工具返回/渲染”的问题
+- 回归测试（同一批 query 比较输出差异）
+
+---
+
+## Tools
+
+- `time`：当前时间
+- `weather`：天气（OpenWeather）
+- `poi`：附近 POI（AMap）
+
+---
+
+## Tests
+
+```bash
+PYTHONPATH=src pytest -q
+```
+
+建议的测试方式：
+- 仅跑工具层单测：
+  - `PYTHONPATH=src pytest -q tests/test_tools_unit.py`
+- 验证契约（工具/agent schema 对齐）：
+  - `PYTHONPATH=src pytest -q tests/test_contract.py`
+- 冒烟测试（mock 模式，不依赖外部 API）：
+  - `PYTHONPATH=src pytest -q tests/test_smoke_cli.py`
+
+---
+
+## Configuration
+
+常用环境变量（详见 `.env.example`）：
+- `OPENAI_API_KEY`：OpenAI API Key（必需，除非使用 mock）
+- `OPENWEATHER_API_KEY`：OpenWeather Key（天气工具必需）
+- `AMAP_API_KEY`：高德 Key（POI/地理相关工具必需）
+- `A2A_MCP_OPENAI_MODEL`：OpenAI 模型名（默认 `gpt-4o-mini`）
+- `A2A_MCP_OPENAI_TIMEOUT_S`：OpenAI 超时秒数（默认 20）
+- `A2A_MCP_MCP_BASE_URL`：工具服务地址（默认 `http://localhost:7001`）
+- `A2A_MCP_MOCK_LLM`：是否启用 mock（`true/false`）
+- `A2A_MCP_TRACE_ENABLED`：是否写入 trace 文件（`true/false`）
+- `A2A_MCP_TRACE_DIR`：trace 输出目录（默认 `traces`）
+
+模型说明：
+- 默认模型为 `gpt-4o-mini`（代码内默认值）
+- 如需切换，设置 `.env`：
+  `A2A_MCP_OPENAI_MODEL=gpt-4o`
 
 ---
 
 ## Troubleshooting
 
-### Port already in use
-
-- Free the ports or change them in code:
-  - MCP: `7001`
-  - Agent: `7002`
-
-### Weather tool returns “city not found”
-
-- OpenWeather 的城市名更偏向英文/标准拼写；AMap 更适合中文地名
-- 建议：在 Agent 侧做一次“城市名规范化”（后续重构项）
-
-### AMap returns empty results
-
-- 检查 `AMAP_API_KEY`
-- 部分关键词/类型需要调整（例如“火锅”“景点”“商场”等）
+- 端口占用：调整 `A2A_MCP_MCP_BASE_URL` 或在脚本中改端口
+- 外部 API 报错：确认 key 配置是否正确
 
 ---
 
-## Recommended next steps (to make this demo “production-like”)
+## Roadmap
 
-如果你准备把这个 demo 变成“工程化可维护的样例”，建议按顺序做：
-
-1. **单一真相源（schema）**：把工具的 input/output/error schema 从 Agent 手写迁移到 MCP 端统一导出
-2. **ToolBroker**：抽一个统一工具调用层（超时/重试/限流/结构化错误/结构化日志）
-3. **结构化输出**：工具返回 JSON `data`，最终由 Agent 渲染为自然语言（便于多工具组合）
-4. **Trace 回放**：每次请求生成 `trace_id`，保存 tool_calls 与结果，便于复现/调试
-5. **Tests**：至少包含工具单测 + 契约测试（防止 Agent/MCP schema 漂移）
-
----
-
-## Roadmap (later)
-
-- Multi-agent (Supervisor + Specialists)
-- RAG as a capability service (retrieve/rerank/cite as tools)
-- Streaming UI (SSE) demo
-
----
-
-## License
-
-Choose one (e.g., MIT / Apache-2.0). For demos, MIT is common.
+- AMap 城市 geocode（替换 POI 默认坐标）
+- SSE streaming（端到端流式输出）
+- 多智能体与 RAG 扩展
