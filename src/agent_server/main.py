@@ -13,7 +13,7 @@ def main() -> None:
         "agent_server.app:app",
         host=settings.host,
         port=settings.port,
-        reload=False,
+        reload=settings.reload,
     )
 
 

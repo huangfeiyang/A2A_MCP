@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import uuid
 
-import os
-
 from fastapi import FastAPI, Request
 
 from .executor import AskRequest, handle_ask
 from .logging import get_logger
 from .settings import get_settings
 
-app = FastAPI(title="A2A Agent Server", version="0.1.0")
+app = FastAPI(
+    title=get_settings().service_title,
+    version=get_settings().agent_version,
+)
 logger = get_logger("agent_server")
 
 
@@ -23,12 +24,21 @@ def log_startup_config() -> None:
         "agent_server_config",
         extra={
             "extra": {
+                "agent_name": settings.agent_name,
+                "agent_version": settings.agent_version,
                 "openai_model": settings.openai_model,
+                "openai_base_url": settings.openai_base_url,
+                "temperature": settings.temperature,
+                "max_tool_calls": settings.max_tool_calls,
+                "tool_arg_retry_limit": settings.tool_arg_retry_limit,
                 "mock_llm": settings.mock_llm,
+                "host": settings.host,
+                "port": settings.port,
                 "mcp_base_url": settings.mcp_base_url,
                 "openai_timeout_s": settings.openai_timeout_s,
-                "env_mock_llm": os.environ.get("A2A_MCP_MOCK_LLM"),
-                "env_mcp_base_url": os.environ.get("A2A_MCP_MCP_BASE_URL"),
+                "request_timeout_s": settings.request_timeout_s,
+                "trace_enabled": settings.trace_enabled,
+                "trace_dir": settings.trace_dir,
             }
         },
     )
@@ -43,9 +53,9 @@ def health() -> dict[str, str]:
 def agent_card() -> dict[str, object]:
     settings = get_settings()
     return {
-        "name": "autocity-agent",
-        "version": "0.1.0",
-        "description": "Single agent demo with MCP tool server.",
+        "name": settings.agent_name,
+        "version": settings.agent_version,
+        "description": settings.agent_description,
         "endpoints": {"ask": "/v1/ask"},
         "mcp_base_url": settings.mcp_base_url,
     }

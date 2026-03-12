@@ -20,7 +20,10 @@ from .tools import get_tool_handler, get_tool_spec, list_tool_specs
 
 logger = get_logger("tool_server")
 
-app = FastAPI(title="A2A MCP Tool Server", version="0.1.0")
+app = FastAPI(
+    title=get_settings().service_title,
+    version=get_settings().service_version,
+)
 
 
 @app.on_event("startup")
@@ -30,8 +33,13 @@ def log_startup_config() -> None:
         "tool_server_config",
         extra={
             "extra": {
+                "host": settings.host,
+                "port": settings.port,
                 "openweather_key_set": bool(settings.openweather_api_key),
                 "amap_key_set": bool(settings.amap_api_key),
+                "request_timeout_s": settings.request_timeout_s,
+                "default_timezone": settings.default_timezone,
+                "default_lang": settings.default_lang,
             }
         },
     )
@@ -158,14 +166,12 @@ async def call_tool(tool_name: str, request: Request) -> ToolResponse:
 def main() -> None:
     import uvicorn
 
-    from .settings import get_settings
-
     settings = get_settings()
     uvicorn.run(
         "tool_server.server:app",
         host=settings.host,
         port=settings.port,
-        reload=False,
+        reload=settings.reload,
     )
 
 

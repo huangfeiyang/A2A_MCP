@@ -2,18 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PYTHONPATH="$ROOT_DIR/src"
+export PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
-RELOAD_FLAG=""
 if [[ "${1:-}" == "--reload" ]]; then
-  RELOAD_FLAG="--reload"
+  export A2A_MCP_RELOAD=true
 fi
 
-uvicorn tool_server.server:app --host 0.0.0.0 --port 7001 $RELOAD_FLAG &
+python -m tool_server.server &
 TOOL_PID=$!
 
 echo "Tool server started (pid=$TOOL_PID)"
 
 trap 'kill $TOOL_PID' EXIT
 
-uvicorn agent_server.app:app --host 0.0.0.0 --port 7002 $RELOAD_FLAG
+python -m agent_server.main

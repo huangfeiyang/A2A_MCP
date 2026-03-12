@@ -95,13 +95,37 @@ pip install -r requirements-dev.txt
 
 ### 2) Configure environment variables
 
-Create `.env` in project root:
+Create `.env` from the example in project root:
+
+```bash
+cp .env.example .env
+```
+
+然后按需修改其中的配置。常见最小配置：
 
 ```bash
 OPENAI_API_KEY=your_openai_api_key
 OPENWEATHER_API_KEY=your_openweather_api_key
 AMAP_API_KEY=your_amap_api_key
 ```
+
+如果你要切到兼容 OpenAI API 的第三方网关，也可以在 `.env` 里设置：
+
+```bash
+OPENAI_BASE_URL=https://your-openai-compatible-endpoint/v1
+```
+
+常见示例：
+
+```bash
+# ChatAnywhere（中国国内）
+OPENAI_BASE_URL=https://api.chatanywhere.tech/v1
+
+# ChatAnywhere（中国境外）
+OPENAI_BASE_URL=https://api.chatanywhere.org/v1
+```
+
+如果切回 OpenAI 官方 API，建议直接注释掉或删除 `OPENAI_BASE_URL`，不要保留第三方地址。
 
 ### 3) Start services
 
@@ -196,26 +220,44 @@ PYTHONPATH=src pytest -q
 
 常用环境变量（详见 `.env.example`）：
 - `OPENAI_API_KEY`：OpenAI API Key（必需，除非使用 mock）
+- `OPENAI_BASE_URL`：OpenAI-compatible API Base URL。使用 OpenAI 官方 API 时建议留空或注释掉；使用第三方兼容网关时再显式设置
 - `OPENWEATHER_API_KEY`：OpenWeather Key（天气工具必需）
 - `AMAP_API_KEY`：高德 Key（POI/地理相关工具必需）
 - `A2A_MCP_OPENAI_MODEL`：OpenAI 模型名（默认 `gpt-4o-mini`）
+- `A2A_MCP_OPENAI_TEMPERATURE`：LLM temperature（默认 `0.2`）
 - `A2A_MCP_OPENAI_TIMEOUT_S`：OpenAI 超时秒数（默认 20）
+- `A2A_MCP_MAX_TOOL_CALLS`：单次请求最多允许的工具调用次数（默认 `3`）
+- `A2A_MCP_TOOL_ARG_RETRY_LIMIT`：工具参数校验失败后，允许模型自动重试生成参数的次数（默认 `1`）
+- `A2A_MCP_AGENT_HOST` / `A2A_MCP_AGENT_PORT`：Agent 服务监听地址（默认 `0.0.0.0:7002`）
+- `A2A_MCP_TOOL_HOST` / `A2A_MCP_TOOL_PORT`：Tool 服务监听地址（默认 `0.0.0.0:7001`）
+- `A2A_MCP_AGENT_BASE_URL`：CLI 与冒烟脚本默认访问的 Agent 地址（默认 `http://localhost:7002`）
 - `A2A_MCP_MCP_BASE_URL`：工具服务地址（默认 `http://localhost:7001`）
+- `A2A_MCP_AGENT_REQUEST_TIMEOUT_S`：Agent 调工具服务的 HTTP 超时（默认 `10`）
+- `A2A_MCP_TOOL_REQUEST_TIMEOUT_S`：Tool 服务调外部 API 的超时（默认 `8`）
 - `A2A_MCP_MOCK_LLM`：是否启用 mock（`true/false`）
 - `A2A_MCP_TRACE_ENABLED`：是否写入 trace 文件（`true/false`）
 - `A2A_MCP_TRACE_DIR`：trace 输出目录（默认 `traces`）
+- `A2A_MCP_RELOAD`：本地启动时是否启用 uvicorn reload（默认 `false`）
 
 模型说明：
 - 默认模型为 `gpt-4o-mini`（代码内默认值）
 - 如需切换，设置 `.env`：
   `A2A_MCP_OPENAI_MODEL=gpt-4o`
 
+兼容网关说明（实测经验）：
+- 使用第三方兼容 OpenAI 的网关时，即使你配置的是 `gpt-4o-mini`，实际路由到的后端模型版本也可能不同。
+- 本项目排查中，第三方免费线路曾出现“名义上是 `gpt-4o-mini`，实际表现更接近 `gpt-4o-mini-ca`”的情况，tool calling 参数稳定性会变差，可能出现遗漏 `city` 之类的参数问题。
+- 切换到 OpenAI 官方 API，或切换到第三方付费线路后，请求恢复为正常 `gpt-4o-mini`，tool calling 表现更稳定。
+- 这类问题通常不是本项目把参数吃掉了，而是上游模型/兼容层实际能力与名义模型不一致。
+
 ---
 
 ## Troubleshooting
 
-- 端口占用：调整 `A2A_MCP_MCP_BASE_URL` 或在脚本中改端口
+- 端口占用：优先调整 `A2A_MCP_AGENT_PORT`、`A2A_MCP_TOOL_PORT`，如果 tool 端口变了，同时更新 `A2A_MCP_MCP_BASE_URL`
 - 外部 API 报错：确认 key 配置是否正确
+- 切换 OpenAI 官方 API 后仍然异常：检查 `.env` 里是否残留了 `OPENAI_BASE_URL`。如已切回官方，建议将其删除或注释掉
+- 第三方兼容网关 tool calling 不稳定：先确认实际路由的模型版本，再区分是项目问题还是上游模型/线路问题
 
 ---
 

@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
 import httpx
 
+from .settings import get_settings
+
 
 def build_parser() -> argparse.ArgumentParser:
+    settings = get_settings()
     parser = argparse.ArgumentParser(description="Call the A2A agent server")
     parser.add_argument("query", help="User query")
-    parser.add_argument("--agent-url", default="http://localhost:7002", help="Agent server base URL")
-    parser.add_argument("--timeout", type=float, default=60.0, help="Request timeout seconds")
+    parser.add_argument("--agent-url", default=settings.agent_base_url, help="Agent server base URL")
+    parser.add_argument("--timeout", type=float, default=settings.timeout_s, help="Request timeout seconds")
     parser.add_argument("--verbose", action="store_true", help="Print tool calls and trace id")
     return parser
 

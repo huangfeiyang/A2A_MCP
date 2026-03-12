@@ -47,7 +47,10 @@ class Agent:
         self._broker = ToolBroker(settings)
         self._client = None
         if settings.openai_api_key:
-            self._client = OpenAI(api_key=settings.openai_api_key)
+            client_kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
+            if settings.openai_base_url:
+                client_kwargs["base_url"] = settings.openai_base_url
+            self._client = OpenAI(**client_kwargs)
 
     async def run(self, query: str, trace_id: str, trace: TraceRecord) -> AgentState:
         """Run a single request through the tool-use loop."""
@@ -61,6 +64,8 @@ class Agent:
             {"role": "user", "content": query},
         ]
         remaining = self._settings.max_tool_calls
+        retry_budget = self._settings.tool_arg_retry_limit
+        forced_tool_name: str | None = None
 
         while True:
             try:
@@ -68,11 +73,12 @@ class Agent:
                     model=self._settings.openai_model,
                     messages=messages,
                     tools=tools,
-                    tool_choice="auto",
+                    tool_choice=_tool_choice(forced_tool_name),
                     temperature=self._settings.temperature,
                     timeout=self._settings.openai_timeout_s,
                 )
                 message = response.choices[0].message
+                forced_tool_name = None
                 record_llm_call(
                     trace,
                     model=self._settings.openai_model,
@@ -96,6 +102,7 @@ class Agent:
             messages.append(_assistant_tool_call_message(message))
 
             # Execute tool calls sequentially (kept simple for clarity).
+            retry_requested = False
             for call in message.tool_calls:
                 if remaining <= 0:
                     break
@@ -121,6 +128,31 @@ class Agent:
                     }
                 )
                 remaining -= 1
+
+                if _should_retry_tool_call(result) and retry_budget > 0 and remaining > 0:
+                    retry_budget -= 1
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": _tool_retry_message(tool_name, result.error.message, query),
+                        }
+                    )
+                    forced_tool_name = tool_name
+                    retry_requested = True
+                    logger.info(
+                        "tool_args_retry_requested",
+                        extra={
+                            "extra": {
+                                "trace_id": trace_id,
+                                "tool": tool_name,
+                                "retry_budget_remaining": retry_budget,
+                            }
+                        },
+                    )
+                    break
+
+            if retry_requested:
+                continue
 
             if remaining <= 0:
                 break
@@ -204,6 +236,29 @@ class Agent:
 def _extract_city(text: str) -> str | None:
     match = re.search(r"(北京|上海|广州|深圳|杭州|成都)", text)
     return match.group(1) if match else None
+
+
+def _should_retry_tool_call(result: Any) -> bool:
+    return bool(
+        not result.ok
+        and result.error
+        and result.error.code == "INVALID_ARGUMENT"
+    )
+
+
+def _tool_choice(forced_tool_name: str | None) -> Any:
+    if not forced_tool_name:
+        return "auto"
+    return {"type": "function", "function": {"name": forced_tool_name}}
+
+
+def _tool_retry_message(tool_name: str, error_message: str, query: str) -> str:
+    return (
+        f"The previous `{tool_name}` tool call failed validation: {error_message} "
+        f"Retry the same `{tool_name}` tool now with corrected arguments based only on "
+        f"the original user request: {query}. "
+        "Do not answer in natural language. Return only a corrected tool call."
+    )
 
 
 def _summarize_tool_calls(message: Any) -> list[dict[str, Any]]:
